@@ -68,7 +68,7 @@ Order Summary:
 - Payment Method: ${paymentMethod}
 - Items: ${items.map(item => `${item.name} × ${item.quantity}`).join(", ")}
 
-hipping Address:
+Shipping Address:
 ${address.firstName} ${address.lastName}
 ${address.street}
 ${address.city}, ${address.state}, ${address.country} - ${address.zipcode}
