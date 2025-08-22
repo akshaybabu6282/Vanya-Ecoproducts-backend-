@@ -61,19 +61,19 @@ const placeOrder = async (req, res) => {
 
     // ✅ Email to Customer
     const customerText = `
-✅ Thank you for your order at Vanya Ecoproducts!
+Thank you for your order at Vanya Ecoproducts!
 
-🛍️ Order Summary:
+Order Summary:
 - Amount: ₹${amount}
 - Payment Method: ${paymentMethod}
 - Items: ${items.map(item => `${item.name} × ${item.quantity}`).join(", ")}
 
-📦 Shipping Address:
+hipping Address:
 ${address.firstName} ${address.lastName}
 ${address.street}
 ${address.city}, ${address.state}, ${address.country} - ${address.zipcode}
-📧 ${address.email}
-📞 ${address.phone}
+${address.email}
+${address.phone}
 
 We will contact you shortly with further updates.
 
