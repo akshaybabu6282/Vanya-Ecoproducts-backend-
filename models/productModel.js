@@ -8,15 +8,15 @@ const productSchema = new mongoose.Schema({
   },
   description: {
     type: String,
-    required: true
+    required: false
   },
   mainDescription: {
     type: String,
-    required: true
+    required: false
   },
   image: {
     type: [String], // Ensures array of URLs
-    required: true
+    required: false
   },
   bestseller: {
     type: Boolean,
@@ -25,7 +25,8 @@ const productSchema = new mongoose.Schema({
   quantityOptions: [
     {
       label: { type: String, required: true },
-      price: { type: Number, required: true }
+      price: { type: Number, required: true },
+      originalPrice: { type: Number, min: 0 }
     }
   ],
   date: {
