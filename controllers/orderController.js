@@ -1,8 +1,8 @@
 import orderModel from "../models/orderModel.js";
 import userModel from "../models/userModel.js";
 import razorpay from "razorpay";
-import nodemailer from "nodemailer";
 import dotenv from "dotenv";
+import { sendMail as deliverMail } from "../utils/mailer.js";
 
 dotenv.config();
 
@@ -13,24 +13,9 @@ const razorpayInstance = new razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.ADMIN_EMAIL,
-    pass: process.env.ADMIN_PASSWORD
-  }
-});
-
 const sendMail = async (to, subject, text) => {
-  const mailOptions = {
-    from: process.env.ADMIN_EMAIL,
-    to,
-    subject,
-    text
-  };
-
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await deliverMail(to, subject, text);
     console.log(`✅ Email sent to ${to}: ${info.response}`);
   } catch (error) {
     console.error(`❌ Failed to send email to ${to}:`, error);
