@@ -185,11 +185,17 @@ const createInvoice = async (req, res) => {
       });
     }
 
-    const normalizedItems = itemsOrdered.map((item) => ({
-      name: item?.name,
-      quantity: Number(item?.quantity),
-      price: Number(item?.price)
-    }));
+    const normalizedItems = itemsOrdered.map((item) => {
+      const normalized = {
+        name: item?.name,
+        quantity: Number(item?.quantity),
+        price: Number(item?.price)
+      };
+      if (item?.originalPrice != null && item?.originalPrice !== "") {
+        normalized.originalPrice = Number(item.originalPrice);
+      }
+      return normalized;
+    });
 
     const hasInvalidItems = normalizedItems.some(
       (item) =>
@@ -197,7 +203,9 @@ const createInvoice = async (req, res) => {
         !Number.isFinite(item.quantity) ||
         item.quantity <= 0 ||
         !Number.isFinite(item.price) ||
-        item.price < 0
+        item.price < 0 ||
+        (item.originalPrice != null &&
+          (!Number.isFinite(item.originalPrice) || item.originalPrice < 0))
     );
 
     if (hasInvalidItems) {
