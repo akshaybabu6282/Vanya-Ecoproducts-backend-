@@ -4,8 +4,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import {
     createPendingSession,
-    getPhoneOptionsForClient,
-    sendOtpToPhone,
+    sendOtpEmail,
     verifyOtpCode
 } from '../utils/adminOtp.js'
 
@@ -82,7 +81,7 @@ const registerUser = async (req, res) => {
 const issueAdminToken = () =>
     jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET)
 
-// Admin login step 1: email + password → choose OTP phone
+// Admin login step 1: email + password → pending session for email OTP
 const adminLogin = async (req, res) => {
     try {
         const { email, password } = req.body
@@ -92,7 +91,7 @@ const adminLogin = async (req, res) => {
                 success: true,
                 requiresOtp: true,
                 pendingToken,
-                phones: getPhoneOptionsForClient()
+                otpChannel: 'email'
             })
         } else {
             res.json({ success: false, message: "Invalid Credentials" })
@@ -103,14 +102,14 @@ const adminLogin = async (req, res) => {
     }
 }
 
-// Admin login step 2: send OTP to selected phone (last 4 digits shown in UI)
+// Admin login step 2: send OTP to admin email
 const adminSendOtp = async (req, res) => {
     try {
-        const { pendingToken, phoneId } = req.body
-        if (!pendingToken || !phoneId) {
-            return res.json({ success: false, message: "Missing pending session or phone." })
+        const { pendingToken } = req.body
+        if (!pendingToken) {
+            return res.json({ success: false, message: "Missing pending session." })
         }
-        const result = await sendOtpToPhone(pendingToken, phoneId)
+        const result = await sendOtpEmail(pendingToken)
         if (!result.ok) {
             return res.status(400).json({ success: false, message: result.message })
         }
@@ -124,11 +123,11 @@ const adminSendOtp = async (req, res) => {
 // Admin login step 3: verify OTP → JWT
 const adminVerifyOtp = async (req, res) => {
     try {
-        const { pendingToken, phoneId, otp } = req.body
-        if (!pendingToken || !phoneId || !otp) {
+        const { pendingToken, otp } = req.body
+        if (!pendingToken || !otp) {
             return res.json({ success: false, message: "OTP verification details are incomplete." })
         }
-        const result = verifyOtpCode(pendingToken, phoneId, otp)
+        const result = verifyOtpCode(pendingToken, otp)
         if (!result.ok) {
             return res.json({ success: false, message: result.message })
         }

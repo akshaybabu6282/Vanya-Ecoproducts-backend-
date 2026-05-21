@@ -16,14 +16,14 @@ const razorpayInstance = new razorpay({
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    user: process.env.ADMIN_EMAIL,
+    pass: process.env.ADMIN_PASSWORD
   }
 });
 
 const sendMail = async (to, subject, text) => {
   const mailOptions = {
-    from: process.env.EMAIL_USER,
+    from: process.env.ADMIN_EMAIL,
     to,
     subject,
     text
@@ -100,7 +100,7 @@ ${address.street}, ${address.city}, ${address.state}, ${address.country} - ${add
 Check your admin dashboard for full details.
 `;
 
-    await sendMail(process.env.EMAIL_USER, "📥 New Order Received - Vanya Ecoproducts", adminText);
+    await sendMail(process.env.ADMIN_EMAIL, "📥 New Order Received - Vanya Ecoproducts", adminText);
 
     res.status(200).json({ success: true, message: "Order placed successfully" });
   } catch (error) {
@@ -199,7 +199,7 @@ ${address.firstName} ${address.lastName}
 ${address.street}, ${address.city}, ${address.state}, ${address.country} - ${address.zipcode}
 `;
 
-      await sendMail(process.env.EMAIL_USER, "📥 Paid Order - Vanya Ecoproducts", adminText);
+      await sendMail(process.env.ADMIN_EMAIL, "📥 Paid Order - Vanya Ecoproducts", adminText);
 
       res.json({ success: true, message: "✅ Payment Successful" });
     } else {
