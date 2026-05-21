@@ -69,7 +69,7 @@ async function deliverOtpEmail(toEmail, otp) {
       return;
     }
     throw new Error(
-      'Email service is not configured. Set EMAIL_USER and EMAIL_PASS (Gmail App Password) in .env.'
+      'Email is not configured. Set RESEND_API_KEY on the server (hosted), or EMAIL_USER + EMAIL_PASS locally, or OTP_DEV_CONSOLE=true.'
     );
   }
 
