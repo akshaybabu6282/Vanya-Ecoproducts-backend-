@@ -69,7 +69,7 @@ async function deliverOtpEmail(toEmail, otp) {
       return;
     }
     throw new Error(
-      'Email service is not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD on the server.'
+      'Email service is not configured. Set EMAIL_USER and EMAIL_PASS (Gmail App Password) in .env.'
     );
   }
 
