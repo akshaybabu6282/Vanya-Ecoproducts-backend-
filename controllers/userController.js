@@ -2,6 +2,12 @@ import userModel from '../models/userModel.js'
 import validator from 'validator'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
+import {
+    createPendingSession,
+    getPhoneOptionsForClient,
+    sendOtpToPhone,
+    verifyOtpCode
+} from '../utils/adminOtp.js'
 
 const createToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET)
@@ -73,13 +79,21 @@ const registerUser = async (req, res) => {
     }
 }
 
-// Routefor admin login
+const issueAdminToken = () =>
+    jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET)
+
+// Admin login step 1: email + password → choose OTP phone
 const adminLogin = async (req, res) => {
     try {
         const { email, password } = req.body
         if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-            const token = jwt.sign(email + password, process.env.JWT_SECRET)
-            res.json({ success: true, token })
+            const pendingToken = createPendingSession(email)
+            res.json({
+                success: true,
+                requiresOtp: true,
+                pendingToken,
+                phones: getPhoneOptionsForClient()
+            })
         } else {
             res.json({ success: false, message: "Invalid Credentials" })
         }
@@ -89,4 +103,37 @@ const adminLogin = async (req, res) => {
     }
 }
 
-export { loginUser, registerUser, adminLogin }
+// Admin login step 2: send OTP to selected phone (last 4 digits shown in UI)
+const adminSendOtp = async (req, res) => {
+    try {
+        const { pendingToken, phoneId } = req.body
+        if (!pendingToken || !phoneId) {
+            return res.json({ success: false, message: "Missing pending session or phone." })
+        }
+        const result = await sendOtpToPhone(pendingToken, phoneId)
+        res.json({ success: result.ok, message: result.message })
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message })
+    }
+}
+
+// Admin login step 3: verify OTP → JWT
+const adminVerifyOtp = async (req, res) => {
+    try {
+        const { pendingToken, phoneId, otp } = req.body
+        if (!pendingToken || !phoneId || !otp) {
+            return res.json({ success: false, message: "OTP verification details are incomplete." })
+        }
+        const result = verifyOtpCode(pendingToken, phoneId, otp)
+        if (!result.ok) {
+            return res.json({ success: false, message: result.message })
+        }
+        res.json({ success: true, token: issueAdminToken() })
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message })
+    }
+}
+
+export { loginUser, registerUser, adminLogin, adminSendOtp, adminVerifyOtp }
