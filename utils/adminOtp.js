@@ -1,17 +1,26 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 
+function normalizeIndianMobile(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+
+function last4Of(number) {
+  const digits = normalizeIndianMobile(number);
+  return digits.length >= 4 ? digits.slice(-4) : digits;
+}
+
+function phoneEntry(id, rawNumber) {
+  const number = normalizeIndianMobile(rawNumber);
+  return { id, number, last4: last4Of(number) };
+}
+
 export const ADMIN_OTP_PHONES = [
-  {
-    id: 'phone_1',
-    last4: '0544',
-    number: String(process.env.ADMIN_OTP_PHONE_1 || '9400890544').replace(/\D/g, ''),
-  },
-  {
-    id: 'phone_2',
-    last4: '3437',
-    number: String(process.env.ADMIN_OTP_PHONE_2 || '8281663437').replace(/\D/g, ''),
-  },
+  phoneEntry('phone_1', process.env.ADMIN_OTP_PHONE_1 || '9400890544'),
+  phoneEntry('phone_2', process.env.ADMIN_OTP_PHONE_2 || '8281663437'),
 ];
 
 /** @type {Map<string, { email: string, sendCount: Record<string, number>, otpData: object|null }>} */
@@ -62,8 +71,11 @@ export function validatePendingToken(pendingToken) {
     if (decoded.purpose !== 'admin_otp_pending' || !decoded.email) {
       return null;
     }
-    const session = pendingSessions.get(pendingToken);
-    if (!session || session.email !== decoded.email) {
+    let session = pendingSessions.get(pendingToken);
+    if (!session) {
+      session = { email: decoded.email, sendCount: {}, otpData: null };
+      pendingSessions.set(pendingToken, session);
+    } else if (session.email !== decoded.email) {
       return null;
     }
     return { pendingToken, session, email: decoded.email };
@@ -72,33 +84,87 @@ export function validatePendingToken(pendingToken) {
   }
 }
 
+function fast2smsErrorMessage(data) {
+  const msg = data?.message;
+  if (Array.isArray(msg)) return msg.join(', ');
+  if (typeof msg === 'string' && msg.trim()) return msg;
+  return 'Failed to send SMS';
+}
+
+async function deliverViaOtpApi(apiKey, mobile, otp) {
+  const otpId = process.env.FAST2SMS_OTP_ID?.trim();
+  if (!otpId) return false;
+
+  const response = await fetch('https://www.fast2sms.com/dev/otp/send', {
+    method: 'POST',
+    headers: {
+      authorization: apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      mobile,
+      otp_id: otpId,
+      otp,
+      otp_length: 6,
+      otp_expiry: 5,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.return !== true) {
+    throw new Error(fast2smsErrorMessage(data));
+  }
+  return true;
+}
+
+async function deliverViaBulkOtpRoute(apiKey, mobile, otp) {
+  const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+    method: 'POST',
+    headers: {
+      authorization: apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      route: 'otp',
+      variables_values: otp,
+      numbers: mobile,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.return !== true) {
+    throw new Error(fast2smsErrorMessage(data));
+  }
+}
+
 async function deliverOtpSms(number, otp) {
-  const apiKey = process.env.FAST2SMS_API_KEY;
-  const digits =
-    number.length === 12 && number.startsWith('91') ? number.slice(2) : number;
+  const apiKey = process.env.FAST2SMS_API_KEY?.trim();
+  const mobile = normalizeIndianMobile(number);
 
-  if (apiKey) {
-    const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-      method: 'POST',
-      headers: {
-        authorization: apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        route: 'otp',
-        variables_values: otp,
-        numbers: digits,
-      }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data?.return === false) {
-      throw new Error(data?.message || 'Failed to send SMS');
-    }
-    return;
+  if (!/^\d{10}$/.test(mobile)) {
+    throw new Error('Invalid admin phone number configured on server.');
   }
 
-  console.log(`[Admin OTP] Send to ${digits}: ${otp}`);
+  if (!apiKey) {
+    if (process.env.OTP_DEV_CONSOLE === 'true') {
+      console.log(`[Admin OTP] (dev) Send to ${mobile}: ${otp}`);
+      return;
+    }
+    throw new Error(
+      'SMS service is not configured. Set FAST2SMS_API_KEY on the server.'
+    );
+  }
+
+  if (process.env.FAST2SMS_OTP_ID?.trim()) {
+    try {
+      const sent = await deliverViaOtpApi(apiKey, mobile, otp);
+      if (sent) return;
+    } catch (err) {
+      console.warn('[Admin OTP] OTP API failed, trying bulkV2:', err.message);
+    }
+  }
+
+  await deliverViaBulkOtpRoute(apiKey, mobile, otp);
 }
 
 export async function sendOtpToPhone(pendingToken, phoneId) {
@@ -110,6 +176,9 @@ export async function sendOtpToPhone(pendingToken, phoneId) {
   const phone = getPhoneById(phoneId);
   if (!phone) {
     return { ok: false, message: 'Invalid phone selection.' };
+  }
+  if (!/^\d{10}$/.test(phone.number)) {
+    return { ok: false, message: 'Admin phone number is not configured correctly.' };
   }
 
   const { session } = validated;

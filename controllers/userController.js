@@ -111,7 +111,10 @@ const adminSendOtp = async (req, res) => {
             return res.json({ success: false, message: "Missing pending session or phone." })
         }
         const result = await sendOtpToPhone(pendingToken, phoneId)
-        res.json({ success: result.ok, message: result.message })
+        if (!result.ok) {
+            return res.status(400).json({ success: false, message: result.message })
+        }
+        res.json({ success: true, message: result.message })
     } catch (error) {
         console.log(error);
         res.json({ success: false, message: error.message })
