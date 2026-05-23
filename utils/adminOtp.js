@@ -87,6 +87,7 @@ export async function sendOtpEmail(pendingToken) {
   }
 
   const { session, email } = validated;
+  console.log("test--------", session, email);
   const now = Date.now();
 
   if (now - session.lastSentAt < RESEND_COOLDOWN_MS) {
