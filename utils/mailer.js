@@ -89,6 +89,7 @@ export async function sendMail(to, subject, text) {
       'Email is not configured. On hosted servers set RESEND_API_KEY (recommended). Locally use EMAIL_USER + EMAIL_PASS or OTP_DEV_CONSOLE=true.'
     );
   } catch (error) {
+    console.log("error---", error);
     const msg = error?.message || 'Failed to send email';
     if (/timeout/i.test(msg)) {
       throw new Error(
