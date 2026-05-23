@@ -77,9 +77,9 @@ async function sendViaSmtp(to, subject, text) {
 
 export async function sendMail(to, subject, text) {
   try {
-    if (usesResend()) {
-      return await sendViaResend(to, subject, text);
-    }
+    // if (usesResend()) {
+    //   return await sendViaResend(to, subject, text);
+    // }
     if (usesSmtp()) {
       return await sendViaSmtp(to, subject, text);
     }
