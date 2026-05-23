@@ -42,6 +42,7 @@ function getFromAddress() {
 
 async function sendViaResend(to, subject, text) {
   const apiKey = process.env.RESEND_API_KEY.trim();
+  console.log("resend called---")
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -49,8 +50,8 @@ async function sendViaResend(to, subject, text) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: getFromAddress(),
-      to: [to],
+      from: 'p.kombra@gmail.com',
+      to: ['priyankaprakash5794@gmail.com'],
       subject,
       text,
     }),
@@ -77,9 +78,9 @@ async function sendViaSmtp(to, subject, text) {
 
 export async function sendMail(to, subject, text) {
   try {
-    // if (usesResend()) {
-    //   return await sendViaResend(to, subject, text);
-    // }
+    if (usesResend()) {
+      return await sendViaResend(to, subject, text);
+    }
     if (usesSmtp()) {
       return await sendViaSmtp(to, subject, text);
     }
