@@ -9,8 +9,8 @@ function getTransporter() {
       port: 465,
       secure: true,
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: process.env.ADMIN_EMAIL,
+        pass: process.env.ADMIN_PASSWORD,
       },
       connectionTimeout: 15000,
       greetingTimeout: 15000,
@@ -67,8 +67,9 @@ async function sendViaResend(to, subject, text) {
 }
 
 async function sendViaSmtp(to, subject, text) {
+  console.log("smtp called---", process.env.ADMIN_EMAIL, to, subject, text);
   const info = await getTransporter().sendMail({
-    from: process.env.EMAIL_USER,
+    from: process.env.ADMIN_EMAIL,
     to,
     subject,
     text,
@@ -78,9 +79,9 @@ async function sendViaSmtp(to, subject, text) {
 
 export async function sendMail(to, subject, text) {
   try {
-    if (usesResend()) {
-      return await sendViaResend(to, subject, text);
-    }
+    // if (usesResend()) {
+    //   return await sendViaResend(to, subject, text);
+    // }
     if (usesSmtp()) {
       return await sendViaSmtp(to, subject, text);
     }
