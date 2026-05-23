@@ -69,7 +69,6 @@ function dateRangeForPeriod(period) {
 
 const getAdminSales = async (req, res) => {
   try {
-    console.log("bfwehfbhjwebfkjwhekjfhwekj")
     const period = req.body?.period ?? req.query?.period ?? "today";
     const range = dateRangeForPeriod(period);
     const filter = range ? { date: { $gte: range.start, $lte: range.end } } : {};
@@ -170,7 +169,6 @@ const createInvoice = async (req, res) => {
       totalAmount,
       discount = 0
     } = req.body;
-    console.log("jefjhgfjhgrjhg ", req.body);
     if (
       !invoiceId ||
       !flatName ||
