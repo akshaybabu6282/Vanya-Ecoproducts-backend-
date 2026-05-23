@@ -9,8 +9,8 @@ function getTransporter() {
       port: 465,
       secure: true,
       auth: {
-        user: process.env.ADMIN_EMAIL,
-        pass: process.env.ADMIN_PASSWORD,
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
       },
       connectionTimeout: 15000,
       greetingTimeout: 15000,
@@ -42,7 +42,7 @@ function getFromAddress() {
 
 async function sendViaResend(to, subject, text) {
   const apiKey = process.env.RESEND_API_KEY.trim();
-  console.log("resend called---")
+  console.log("resend called---", apiKey, to, subject, text);
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -50,8 +50,8 @@ async function sendViaResend(to, subject, text) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'p.kombra@gmail.com',
-      to: ['priyankaprakash5794@gmail.com'],
+      from: 'support@vanyaecoproducts.in',
+      to: [to],
       subject,
       text,
     }),
@@ -67,9 +67,8 @@ async function sendViaResend(to, subject, text) {
 }
 
 async function sendViaSmtp(to, subject, text) {
-  console.log("smtp called---", process.env.ADMIN_EMAIL, to, subject, text);
   const info = await getTransporter().sendMail({
-    from: process.env.ADMIN_EMAIL,
+    from: process.env.EMAIL_USER,
     to,
     subject,
     text,
@@ -79,26 +78,25 @@ async function sendViaSmtp(to, subject, text) {
 
 export async function sendMail(to, subject, text) {
   try {
-    // if (usesResend()) {
-    //   return await sendViaResend(to, subject, text);
-    // }
+    if (usesResend()) {
+      return await sendViaResend(to, subject, text);
+    }
     if (usesSmtp()) {
       return await sendViaSmtp(to, subject, text);
     }
     throw new Error(
-      'Email is not configured. On hosted servers set RESEND_API_KEY (recommended). Locally use EMAIL_USER + EMAIL_PASS or OTP_DEV_CONSOLE=true.'
+      'Email is not configured. On hosted servers set RESEND_API_KEY. Locally use EMAIL_USER + EMAIL_PASS or OTP_DEV_CONSOLE=true.'
     );
   } catch (error) {
-    console.log("error---", error);
     const msg = error?.message || 'Failed to send email';
     if (/timeout/i.test(msg)) {
       throw new Error(
-        'Gmail SMTP is blocked on this host (connection timeout). Add RESEND_API_KEY to your server environment variables — see https://resend.com — then redeploy.'
+        'Gmail SMTP is blocked on this host (connection timeout). Use RESEND_API_KEY on Render — SMTP will not work there.'
       );
     }
     if (/invalid login|username and password|535|534/i.test(msg)) {
       throw new Error(
-        'Gmail rejected login. Use a Gmail App Password in EMAIL_PASS, or use RESEND_API_KEY on production.'
+        'Gmail rejected login. EMAIL_PASS must be a Gmail App Password (not ADMIN_PASSWORD).'
       );
     }
     throw error;
