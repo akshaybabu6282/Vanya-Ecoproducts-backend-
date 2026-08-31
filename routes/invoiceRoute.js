@@ -1,9 +1,11 @@
 import express from "express";
 import {
   createInvoice,
+  deleteAdminInvoice,
   getAdminInvoiceById,
   getAdminSales,
-  searchAdminInvoices
+  searchAdminInvoices,
+  updateAdminInvoice,
 } from "../controllers/invoiceController.js";
 import adminAuth from "../middleware/adminAuth.js";
 
@@ -16,6 +18,9 @@ invoiceRouter.post("/admin/sales", adminAuth, getAdminSales);
 
 invoiceRouter.get("/admin/search", adminAuth, searchAdminInvoices);
 invoiceRouter.post("/admin/search", adminAuth, searchAdminInvoices);
+
+invoiceRouter.post("/admin/delete", adminAuth, deleteAdminInvoice);
+invoiceRouter.post("/admin/update/:id", adminAuth, updateAdminInvoice);
 
 invoiceRouter.get("/admin/:id", adminAuth, getAdminInvoiceById);
 

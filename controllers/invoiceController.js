@@ -1,6 +1,84 @@
 import mongoose from "mongoose";
 import invoiceModel from "../models/invoiceModel.js";
 
+function normalizeInvoicePayload(body) {
+  const {
+    invoiceId,
+    flatName,
+    flatNumber = "",
+    customerName,
+    mobile = "",
+    email = "",
+    itemsOrdered,
+    totalAmount,
+    discount = 0,
+    shippingCharges = 0,
+  } = body || {};
+
+  if (
+    !invoiceId ||
+    !flatName ||
+    !customerName ||
+    !Array.isArray(itemsOrdered) ||
+    itemsOrdered.length === 0 ||
+    typeof totalAmount !== "number"
+  ) {
+    return {
+      error: "Missing or invalid invoice payload",
+    };
+  }
+
+  const normalizedItems = itemsOrdered.map((item) => {
+    const normalized = {
+      name: item?.name,
+      quantity: Number(item?.quantity),
+      price: Number(item?.price),
+    };
+    if (item?.displayQuantity) {
+      normalized.displayQuantity = String(item.displayQuantity);
+    }
+    if (item?.originalPrice != null && item?.originalPrice !== "") {
+      normalized.originalPrice = Number(item.originalPrice);
+    }
+    if (item?.mainDescription?.trim()) {
+      normalized.mainDescription = String(item.mainDescription).trim();
+    }
+    return normalized;
+  });
+
+  const hasInvalidItems = normalizedItems.some(
+    (item) =>
+      !item.name ||
+      !Number.isFinite(item.quantity) ||
+      item.quantity <= 0 ||
+      !Number.isFinite(item.price) ||
+      item.price < 0 ||
+      (item.originalPrice != null &&
+        (!Number.isFinite(item.originalPrice) || item.originalPrice < 0))
+  );
+
+  if (hasInvalidItems) {
+    return {
+      error: "Invalid itemsOrdered data",
+    };
+  }
+
+  return {
+    payload: {
+      invoiceId: String(invoiceId).trim(),
+      flatName: String(flatName).trim(),
+      flatNumber: String(flatNumber).trim(),
+      customerName: String(customerName).trim(),
+      mobile: String(mobile).trim(),
+      email: String(email).trim(),
+      itemsOrdered: normalizedItems,
+      totalAmount,
+      discount: Number(discount) || 0,
+      shippingCharges: Number(shippingCharges) || 0,
+    },
+  };
+}
+
 function kolkataYmd(ts = Date.now()) {
   return new Date(ts).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
@@ -12,7 +90,7 @@ function kolkataMidnightMs(ymd) {
 function kolkataWeekdayShort(ms) {
   return new Date(ms).toLocaleDateString("en-US", {
     timeZone: "Asia/Kolkata",
-    weekday: "short"
+    weekday: "short",
   });
 }
 
@@ -85,14 +163,14 @@ const getAdminSales = async (req, res) => {
       invoices,
       summary: {
         count: invoices.length,
-        total
-      }
+        total,
+      },
     });
   } catch (error) {
     console.error("Error fetching invoice sales:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal Server Error"
+      message: error.message || "Internal Server Error",
     });
   }
 };
@@ -117,8 +195,8 @@ const searchAdminInvoices = async (req, res) => {
           { flatName: rx },
           { flatNumber: rx },
           { email: rx },
-          { mobile: rx }
-        ]
+          { mobile: rx },
+        ],
       })
       .sort({ date: -1 })
       .limit(100)
@@ -129,7 +207,7 @@ const searchAdminInvoices = async (req, res) => {
     console.error("Error searching invoices:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal Server Error"
+      message: error.message || "Internal Server Error",
     });
   }
 };
@@ -151,100 +229,117 @@ const getAdminInvoiceById = async (req, res) => {
     console.error("Error fetching invoice:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal Server Error"
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+const updateAdminInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid invoice id" });
+    }
+
+    const normalized = normalizeInvoicePayload(req.body);
+    if (normalized.error) {
+      return res.status(400).json({ success: false, message: normalized.error });
+    }
+
+    const existing = await invoiceModel.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Invoice not found" });
+    }
+
+    if (normalized.payload.invoiceId !== existing.invoiceId) {
+      const duplicate = await invoiceModel.findOne({
+        invoiceId: normalized.payload.invoiceId,
+        _id: { $ne: id },
+      });
+      if (duplicate) {
+        return res.status(409).json({
+          success: false,
+          message: "Invoice ID already exists",
+        });
+      }
+    }
+
+    Object.assign(existing, normalized.payload);
+    await existing.save();
+
+    return res.json({
+      success: true,
+      message: "Invoice updated successfully",
+      invoice: existing,
+    });
+  } catch (error) {
+    console.error("Error updating invoice:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+const deleteAdminInvoice = async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid invoice id" });
+    }
+
+    const deleted = await invoiceModel.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Invoice not found" });
+    }
+
+    return res.json({ success: true, message: "Invoice deleted" });
+  } catch (error) {
+    console.error("Error deleting invoice:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
     });
   }
 };
 
 const createInvoice = async (req, res) => {
   try {
-    const {
-      invoiceId,
-      flatName,
-      flatNumber = "",
-      customerName,
-      mobile = "",
-      email = "",
-      itemsOrdered,
-      totalAmount,
-      discount = 0
-    } = req.body;
-    if (
-      !invoiceId ||
-      !flatName ||
-      !customerName ||
-      !Array.isArray(itemsOrdered) ||
-      itemsOrdered.length === 0 ||
-      typeof totalAmount !== "number"
-    ) {
+    const normalized = normalizeInvoicePayload(req.body);
+    if (normalized.error) {
       return res.status(400).json({
         success: false,
-        message: "Missing or invalid invoice payload"
+        message: normalized.error,
       });
     }
 
-    const normalizedItems = itemsOrdered.map((item) => {
-      const normalized = {
-        name: item?.name,
-        quantity: Number(item?.quantity),
-        price: Number(item?.price)
-      };
-      if (item?.originalPrice != null && item?.originalPrice !== "") {
-        normalized.originalPrice = Number(item.originalPrice);
-      }
-      return normalized;
-    });
-
-    const hasInvalidItems = normalizedItems.some(
-      (item) =>
-        !item.name ||
-        !Number.isFinite(item.quantity) ||
-        item.quantity <= 0 ||
-        !Number.isFinite(item.price) ||
-        item.price < 0 ||
-        (item.originalPrice != null &&
-          (!Number.isFinite(item.originalPrice) || item.originalPrice < 0))
-    );
-
-    if (hasInvalidItems) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid itemsOrdered data"
-      });
-    }
-
-    const newInvoice = new invoiceModel({
-      invoiceId,
-      flatName,
-      flatNumber,
-      customerName,
-      mobile,
-      email,
-      itemsOrdered: normalizedItems,
-      totalAmount,
-      discount
-    });
-
-    const savedInvoice = await newInvoice.save();
+    const savedInvoice = await invoiceModel.create(normalized.payload);
     return res.status(201).json({
       success: true,
       message: "Invoice saved successfully",
-      invoice: savedInvoice
+      invoice: savedInvoice,
     });
   } catch (error) {
     if (error?.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Invoice ID already exists"
+        message: "Invoice ID already exists",
       });
     }
 
     console.error("Error saving invoice:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Internal Server Error"
+      message: error.message || "Internal Server Error",
     });
   }
 };
 
-export { createInvoice, getAdminInvoiceById, getAdminSales, searchAdminInvoices };
+export {
+  createInvoice,
+  deleteAdminInvoice,
+  getAdminInvoiceById,
+  getAdminSales,
+  searchAdminInvoices,
+  updateAdminInvoice,
+};

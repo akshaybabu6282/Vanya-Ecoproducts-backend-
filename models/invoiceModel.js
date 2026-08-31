@@ -6,6 +6,8 @@ const invoiceItemSchema = new mongoose.Schema(
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true, min: 0 },
     originalPrice: { type: Number, min: 0 },
+    displayQuantity: { type: String, trim: true },
+    mainDescription: { type: String, trim: true },
   },
   { _id: false }
 );
@@ -15,59 +17,65 @@ const invoiceSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    trim: true
+    trim: true,
   },
   flatName: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
   },
   flatNumber: {
     type: String,
     default: "",
-    trim: true
+    trim: true,
   },
   customerName: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
   },
   mobile: {
     type: String,
     default: "",
-    trim: true
+    trim: true,
   },
   email: {
     type: String,
     default: "",
     trim: true,
-    lowercase: true
+    lowercase: true,
   },
   itemsOrdered: {
     type: [invoiceItemSchema],
     required: true,
     validate: {
       validator: (items) => Array.isArray(items) && items.length > 0,
-      message: "At least one ordered item is required"
-    }
+      message: "At least one ordered item is required",
+    },
   },
   totalAmount: {
     type: Number,
     required: true,
-    min: 0
+    min: 0,
   },
   discount: {
     type: Number,
     default: 0,
-    min: 0
+    min: 0,
+  },
+  shippingCharges: {
+    type: Number,
+    default: 0,
+    min: 0,
   },
   date: {
     type: Number,
     required: true,
-    default: Date.now
-  }
+    default: Date.now,
+  },
 });
 
-const invoiceModel = mongoose.models.invoice || mongoose.model("invoice", invoiceSchema);
+const invoiceModel =
+  mongoose.models.invoice || mongoose.model("invoice", invoiceSchema);
 
 export default invoiceModel;
