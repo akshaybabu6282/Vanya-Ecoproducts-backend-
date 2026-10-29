@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
 import invoiceModel from "../models/invoiceModel.js";
+import {
+  InventoryError,
+  adjustStockForInvoiceChange,
+  deductStockForItems,
+  restoreStockForItems,
+} from "../utils/inventory.js";
 
 function normalizeInvoicePayload(body) {
   const {
@@ -28,12 +34,24 @@ function normalizeInvoicePayload(body) {
     };
   }
 
+  const hasInvalidProductId = itemsOrdered.some((item) => {
+    const productId = item?.productId || item?._id;
+    return productId && !mongoose.Types.ObjectId.isValid(productId);
+  });
+  if (hasInvalidProductId) {
+    return { error: "Invalid productId in itemsOrdered" };
+  }
+
   const normalizedItems = itemsOrdered.map((item) => {
     const normalized = {
       name: item?.name,
       quantity: Number(item?.quantity),
       price: Number(item?.price),
     };
+    const productId = item?.productId || item?._id;
+    if (productId) {
+      normalized.productId = productId;
+    }
     if (item?.displayQuantity) {
       normalized.displayQuantity = String(item.displayQuantity);
     }
@@ -264,8 +282,29 @@ const updateAdminInvoice = async (req, res) => {
       }
     }
 
+    const previousDoc = existing.toObject();
+    const previousItems = previousDoc.itemsOrdered || [];
     Object.assign(existing, normalized.payload);
     await existing.save();
+
+    try {
+      await adjustStockForInvoiceChange(previousItems, normalized.payload.itemsOrdered);
+    } catch (stockError) {
+      await invoiceModel.findByIdAndUpdate(id, {
+        invoiceId: previousDoc.invoiceId,
+        flatName: previousDoc.flatName,
+        flatNumber: previousDoc.flatNumber,
+        customerName: previousDoc.customerName,
+        mobile: previousDoc.mobile,
+        email: previousDoc.email,
+        itemsOrdered: previousDoc.itemsOrdered,
+        totalAmount: previousDoc.totalAmount,
+        discount: previousDoc.discount,
+        shippingCharges: previousDoc.shippingCharges,
+        date: previousDoc.date,
+      });
+      throw stockError;
+    }
 
     return res.json({
       success: true,
@@ -273,6 +312,12 @@ const updateAdminInvoice = async (req, res) => {
       invoice: existing,
     });
   } catch (error) {
+    if (error instanceof InventoryError) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+      });
+    }
     console.error("Error updating invoice:", error);
     return res.status(500).json({
       success: false,
@@ -291,6 +336,12 @@ const deleteAdminInvoice = async (req, res) => {
     const deleted = await invoiceModel.findByIdAndDelete(id);
     if (!deleted) {
       return res.status(404).json({ success: false, message: "Invoice not found" });
+    }
+
+    try {
+      await restoreStockForItems(deleted.itemsOrdered);
+    } catch (stockError) {
+      console.error("Invoice deleted but stock restore failed:", stockError);
     }
 
     return res.json({ success: true, message: "Invoice deleted" });
@@ -314,12 +365,27 @@ const createInvoice = async (req, res) => {
     }
 
     const savedInvoice = await invoiceModel.create(normalized.payload);
-    return res.status(201).json({
-      success: true,
-      message: "Invoice saved successfully",
-      invoice: savedInvoice,
-    });
+
+    try {
+      const stock = await deductStockForItems(normalized.payload.itemsOrdered);
+      return res.status(201).json({
+        success: true,
+        message: "Invoice saved successfully",
+        invoice: savedInvoice,
+        stock,
+      });
+    } catch (stockError) {
+      await invoiceModel.findByIdAndDelete(savedInvoice._id);
+      throw stockError;
+    }
   } catch (error) {
+    if (error instanceof InventoryError) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     if (error?.code === 11000) {
       return res.status(409).json({
         success: false,
