@@ -1,6 +1,7 @@
 import { v2 as cloudinary } from 'cloudinary'
 import productModel from '../models/productModel.js'
 import userModel from '../models/userModel.js';
+import { deductStockForItems, InventoryError } from '../utils/inventory.js';
 
 const normalizeQuantityOptions = (options) =>
     options.map((opt) => {
@@ -218,6 +219,34 @@ const getProductReviews = async (req, res) => {
 };
 
 
+const deductStock = async (req, res) => {
+    try {
+        const items = req.body?.items || req.body?.itemsOrdered;
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Send billed items as items: [{ productId, name, quantity }]"
+            });
+        }
+
+        const stock = await deductStockForItems(items);
+        return res.json({
+            success: true,
+            message: "Stock deducted successfully",
+            stock
+        });
+    } catch (error) {
+        if (error instanceof InventoryError) {
+            return res.status(error.status).json({
+                success: false,
+                message: error.message
+            });
+        }
+        console.error("Deduct stock error:", error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 export {
     addProduct,
     updateProduct,
@@ -225,5 +254,6 @@ export {
     removeProduct,
     singleProduct,
     addReview,
-    getProductReviews
+    getProductReviews,
+    deductStock
 };
