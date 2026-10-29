@@ -17,7 +17,7 @@ const normalizeQuantityOptions = (options) =>
 // function for adding product
 const addProduct = async (req, res) => {
     try {
-        const { name, description, bestseller, mainDescription, quantityOptions } = req.body;
+        const { name, description, bestseller, mainDescription, quantityOptions, itemCount } = req.body;
 
         // ✅ Parse quantityOptions string to array
         let parsedQuantityOptions;
@@ -52,6 +52,7 @@ const addProduct = async (req, res) => {
             mainDescription,
             bestseller: bestseller === 'true',
             quantityOptions: normalizeQuantityOptions(parsedQuantityOptions),
+            itemCount: itemCount !== undefined && itemCount !== '' ? Number(itemCount) : 0,
             image: imagesUrl,
             date: Date.now()
         };
@@ -71,7 +72,7 @@ const addProduct = async (req, res) => {
 const updateProduct = async (req, res) => {
     try {
         const productId = req.params.id;
-        const { name, description, bestseller, mainDescription, quantityOptions } = req.body;
+        const { name, description, bestseller, mainDescription, quantityOptions, itemCount } = req.body;
 
         const product = await productModel.findById(productId);
         if (!product) return res.json({ success: false, message: "Product not found" });
@@ -98,6 +99,9 @@ const updateProduct = async (req, res) => {
         product.mainDescription = mainDescription || product.mainDescription;
         product.bestseller = bestseller === 'true';
         product.quantityOptions = normalizeQuantityOptions(parsedQuantityOptions);
+        if (itemCount !== undefined && itemCount !== '') {
+            product.itemCount = Number(itemCount);
+        }
         if (newImages.length > 0) product.image = newImages;
 
         await product.save();
