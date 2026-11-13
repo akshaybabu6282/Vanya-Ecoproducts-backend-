@@ -34,6 +34,11 @@ const productSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  hsnCode: {
+    type: String,
+    trim: true,
+    default: ""
+  },
   date: {
     type: Number,
     default: Date.now // fallback to current timestamp
