@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import invoiceModel from "../models/invoiceModel.js";
+import wholesaleInvoiceModel from "../models/wholesaleInvoiceModel.js";
 import {
   InventoryError,
   adjustStockForInvoiceChange,
@@ -141,6 +142,24 @@ function yearBoundsKolkata(todayYmd) {
   return { start, end: nextStart - 1 };
 }
 
+function parseBillType(req) {
+  const t = String(
+    req.body?.billType ?? req.query?.billType ?? req.query?.type ?? "all"
+  )
+    .trim()
+    .toLowerCase();
+  if (t === "wholesale" || t === "retail") return t;
+  return "all";
+}
+
+function tagRetailInvoice(inv) {
+  return { ...inv, billType: "retail" };
+}
+
+function tagWholesaleInvoice(inv) {
+  return { ...inv, billType: "wholesale" };
+}
+
 function dateRangeForPeriod(period) {
   const p = period === undefined || period === null ? "today" : String(period);
   if (p === "all") return null;
@@ -166,10 +185,23 @@ function dateRangeForPeriod(period) {
 const getAdminSales = async (req, res) => {
   try {
     const period = req.body?.period ?? req.query?.period ?? "today";
+    const billType = parseBillType(req);
     const range = dateRangeForPeriod(period);
     const filter = range ? { date: { $gte: range.start, $lte: range.end } } : {};
 
-    const invoices = await invoiceModel.find(filter).sort({ date: -1 }).lean();
+    const [retailDocs, wholesaleDocs] = await Promise.all([
+      billType === "wholesale"
+        ? Promise.resolve([])
+        : invoiceModel.find(filter).sort({ date: -1 }).lean(),
+      billType === "retail"
+        ? Promise.resolve([])
+        : wholesaleInvoiceModel.find(filter).sort({ date: -1 }).lean(),
+    ]);
+
+    const invoices = [
+      ...retailDocs.map(tagRetailInvoice),
+      ...wholesaleDocs.map(tagWholesaleInvoice),
+    ].sort((a, b) => Number(b.date || 0) - Number(a.date || 0));
 
     const total = invoices.reduce((acc, inv) => {
       const n = Number(inv.totalAmount);
@@ -182,6 +214,7 @@ const getAdminSales = async (req, res) => {
       summary: {
         count: invoices.length,
         total,
+        billType,
       },
     });
   } catch (error) {
@@ -198,6 +231,7 @@ const searchAdminInvoices = async (req, res) => {
     const q = String(
       req.body?.query ?? req.query?.query ?? req.query?.q ?? ""
     ).trim();
+    const billType = parseBillType(req);
     if (!q) {
       return res.json({ success: true, invoices: [] });
     }
@@ -205,20 +239,46 @@ const searchAdminInvoices = async (req, res) => {
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const rx = new RegExp(escaped, "i");
 
-    const invoices = await invoiceModel
-      .find({
-        $or: [
-          { invoiceId: rx },
-          { customerName: rx },
-          { flatName: rx },
-          { flatNumber: rx },
-          { email: rx },
-          { mobile: rx },
-        ],
-      })
-      .sort({ date: -1 })
-      .limit(100)
-      .lean();
+    const [retailDocs, wholesaleDocs] = await Promise.all([
+      billType === "wholesale"
+        ? Promise.resolve([])
+        : invoiceModel
+            .find({
+              $or: [
+                { invoiceId: rx },
+                { customerName: rx },
+                { flatName: rx },
+                { flatNumber: rx },
+                { email: rx },
+                { mobile: rx },
+              ],
+            })
+            .sort({ date: -1 })
+            .limit(100)
+            .lean(),
+      billType === "retail"
+        ? Promise.resolve([])
+        : wholesaleInvoiceModel
+            .find({
+              $or: [
+                { invoiceId: rx },
+                { customerName: rx },
+                { address: rx },
+                { email: rx },
+                { mobile: rx },
+              ],
+            })
+            .sort({ date: -1 })
+            .limit(100)
+            .lean(),
+    ]);
+
+    const invoices = [
+      ...retailDocs.map(tagRetailInvoice),
+      ...wholesaleDocs.map(tagWholesaleInvoice),
+    ]
+      .sort((a, b) => Number(b.date || 0) - Number(a.date || 0))
+      .slice(0, 100);
 
     return res.json({ success: true, invoices });
   } catch (error) {
@@ -237,12 +297,17 @@ const getAdminInvoiceById = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid invoice id" });
     }
 
-    const invoice = await invoiceModel.findById(id).lean();
-    if (!invoice) {
-      return res.status(404).json({ success: false, message: "Invoice not found" });
+    const retail = await invoiceModel.findById(id).lean();
+    if (retail) {
+      return res.json({ success: true, invoice: tagRetailInvoice(retail) });
     }
 
-    return res.json({ success: true, invoice });
+    const wholesale = await wholesaleInvoiceModel.findById(id).lean();
+    if (wholesale) {
+      return res.json({ success: true, invoice: tagWholesaleInvoice(wholesale) });
+    }
+
+    return res.status(404).json({ success: false, message: "Invoice not found" });
   } catch (error) {
     console.error("Error fetching invoice:", error);
     return res.status(500).json({
@@ -333,18 +398,22 @@ const deleteAdminInvoice = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid invoice id" });
     }
 
-    const deleted = await invoiceModel.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ success: false, message: "Invoice not found" });
+    const deletedRetail = await invoiceModel.findByIdAndDelete(id);
+    if (deletedRetail) {
+      try {
+        await restoreStockForItems(deletedRetail.itemsOrdered);
+      } catch (stockError) {
+        console.error("Invoice deleted but stock restore failed:", stockError);
+      }
+      return res.json({ success: true, message: "Invoice deleted" });
     }
 
-    try {
-      await restoreStockForItems(deleted.itemsOrdered);
-    } catch (stockError) {
-      console.error("Invoice deleted but stock restore failed:", stockError);
+    const deletedWholesale = await wholesaleInvoiceModel.findByIdAndDelete(id);
+    if (deletedWholesale) {
+      return res.json({ success: true, message: "Invoice deleted" });
     }
 
-    return res.json({ success: true, message: "Invoice deleted" });
+    return res.status(404).json({ success: false, message: "Invoice not found" });
   } catch (error) {
     console.error("Error deleting invoice:", error);
     return res.status(500).json({
