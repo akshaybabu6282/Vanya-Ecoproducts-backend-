@@ -1,5 +1,10 @@
 import mongoose from "mongoose";
 import productModel from "../models/productModel.js";
+import {
+  comboContentsFrom,
+  isComboProduct,
+  matchListedProduct,
+} from "./comboPacks.js";
 
 export class InventoryError extends Error {
   constructor(message, status = 400) {
@@ -40,6 +45,74 @@ function aggregateQuantities(items = []) {
   }
 
   return [...totals.values()];
+}
+
+function productFromList(products, item) {
+  const productId = resolveProductId(item);
+  if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+    const byId = products.find((product) => String(product._id) === String(productId));
+    if (byId) return byId;
+  }
+
+  const name = String(item?.name || "").trim();
+  if (!name) return null;
+
+  const exact = products.find((product) => product.name === name);
+  if (exact) return exact;
+
+  return (
+    products.find((product) => name.startsWith(`${product.name} (`)) ||
+    matchListedProduct(products, name)
+  );
+}
+
+async function expandItemsForStock(items = []) {
+  const products = await productModel.find({}).lean();
+  const expanded = [];
+
+  for (const item of items) {
+    const quantity = Number(item?.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+    const product = productFromList(products, item);
+    if (!product) {
+      throw new InventoryError(
+        `Product not found for billed item "${item?.name || item?.productId}"`
+      );
+    }
+
+    if (!isComboProduct(product)) {
+      expanded.push({
+        productId: product._id,
+        name: product.name,
+        quantity,
+      });
+      continue;
+    }
+
+    const includedNames = comboContentsFrom(item, product);
+    if (includedNames.length === 0) {
+      throw new InventoryError(
+        `Combo pack "${product.name}" has no included products in its description`
+      );
+    }
+
+    for (const listedName of includedNames) {
+      const included = matchListedProduct(products, listedName);
+      if (!included) {
+        throw new InventoryError(
+          `Combo pack "${product.name}" includes "${listedName}", but no matching product was found`
+        );
+      }
+      expanded.push({
+        productId: included._id,
+        name: included.name,
+        quantity,
+      });
+    }
+  }
+
+  return expanded;
 }
 
 async function findProduct(item) {
@@ -89,7 +162,7 @@ async function applyDelta(item, delta) {
 }
 
 export async function deductStockForItems(items) {
-  const aggregated = aggregateQuantities(items);
+  const aggregated = aggregateQuantities(await expandItemsForStock(items));
   const applied = [];
 
   try {
@@ -109,7 +182,7 @@ export async function deductStockForItems(items) {
 }
 
 export async function restoreStockForItems(items) {
-  const aggregated = aggregateQuantities(items);
+  const aggregated = aggregateQuantities(await expandItemsForStock(items));
   const results = [];
   for (const item of aggregated) {
     const result = await applyDelta(item, item.quantity);

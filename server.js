@@ -8,6 +8,7 @@ import productRouter from './routes/productRoute.js';
 import cartRouter from './routes/cartRouter.js';
 import orderRouter from './routes/orderRoute.js';
 import invoiceRouter from './routes/invoiceRoute.js';
+import wholesaleInvoiceRouter from './routes/wholesaleInvoiceRoute.js';
 
 
 // App config
@@ -26,6 +27,7 @@ app.use('/api/product', productRouter);
 app.use('/api/cart', cartRouter);
 app.use('/api/order', orderRouter);
 app.use('/api/invoice', invoiceRouter);
+app.use('/api/wholesale-invoice', wholesaleInvoiceRouter);
 
 // Test API
 app.get('/', (req, res) => {
